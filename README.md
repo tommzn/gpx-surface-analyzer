@@ -61,6 +61,9 @@ gpx-surface-analyzer/
 │   └── kustomization.yaml
 ├── scripts/
 │   └── build_standalone_skill.sh  # baut ein in sich geschlossenes .skill-Paket
+├── .github/
+│   └── workflows/
+│       └── docker-publish.yml     # baut mcp-server-Image (arm64+amd64), pusht zu ghcr.io auf main/Tags
 ├── .dockerignore
 └── README.md
 ```
@@ -98,11 +101,25 @@ Die folgende Anleitung ist auf ein **privates Heimnetz-Cluster auf
 Raspberry Pi (k3s), nicht öffentlich erreichbar** zugeschnitten – Zugriff
 nur aus dem eigenen LAN über NodePort, kein Ingress/TLS nötig.
 
-**1. ARM64-Image bauen und zu ghcr.io pushen**
+**1. Image bauen und zu ghcr.io pushen**
 
-Raspberry Pi läuft auf ARM64 (bei 64-Bit-OS – mit `uname -m` auf dem Pi
-prüfen, sollte `aarch64` zeigen). Falls du von einem Apple-Silicon-Mac aus
-baust (z.B. deinem Mac Mini M1), geht das nativ ohne Emulation:
+Passiert automatisch über `.github/workflows/docker-publish.yml`: bei jedem
+Push auf `main` (der `core/` oder `mcp-server/` ändert) sowie bei
+Versions-Tags (`v*`) baut GitHub Actions das Image für `linux/arm64` *und*
+`linux/amd64` und pusht es nach
+`ghcr.io/<github-user>/gpx-surface-mcp:latest` (zusätzlich getaggt mit
+Short-SHA bzw. Versionsnummer bei Tags). Auf Pull Requests wird nur
+gebaut, nicht gepusht (Validierung ohne Veröffentlichung). Kein manueller
+Schritt nötig – einfach `git push` und in der Actions-Tab den Lauf
+beobachten. Das erstmalig erzeugte GHCR-Package ist standardmäßig
+**privat**; das GitHub-Actions-Token (`GITHUB_TOKEN`) hat automatisch
+Push-Rechte darauf, für den Pull auf den Pi-Nodes siehe Pull-Secret unten.
+
+Manuell/lokal bauen und pushen geht weiterhin, z.B. für schnelle
+Iterationen ohne CI-Wartezeit. Raspberry Pi läuft auf ARM64 (bei 64-Bit-OS
+– mit `uname -m` auf dem Pi prüfen, sollte `aarch64` zeigen). Falls du von
+einem Apple-Silicon-Mac aus baust (z.B. deinem Mac Mini M1), geht das
+nativ ohne Emulation:
 
 ```bash
 docker buildx build \

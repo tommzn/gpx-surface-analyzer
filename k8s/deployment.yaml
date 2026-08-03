@@ -30,8 +30,10 @@ spec:
       #   - name: ghcr-pull-secret
       containers:
         - name: gpx-surface-mcp
-          # ARM64-Image, siehe README fuer den buildx-Build-Befehl.
-          image: ghcr.io/CHANGE_ME/gpx-surface-mcp:latest
+          # Wird automatisch von .github/workflows/docker-publish.yml bei
+          # jedem Push auf main gebaut und gepusht (arm64 + amd64).
+          # Alternativ manuell per buildx bauen, siehe README.
+          image: ghcr.io/tommzn/gpx-surface-mcp:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
