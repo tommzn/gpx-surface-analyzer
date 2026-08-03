@@ -228,6 +228,19 @@ Erzeugt `dist/gpx-surface-analysis.skill`.
 - Bei ungenauem GPS-Track lässt sich die Match-Toleranz über
   `MAX_MATCH_DISTANCE_M` in `core/surface_analysis.py` anpassen.
 
+## Status
+
+- **Getestet:** Kernlogik, alle drei Einstiegspunkte (core/MCP-Import/
+  Skill-CLI), `.skill`-Paket-Build, und die eigentliche Overpass-Abfrage
+  end-to-end gegen mehrere reale GPX-Routen (Straße, Bikepark-Trail,
+  Schmaler-Trail, sowie ein aus Strava-Aktivitätsdaten via MCP exportierter
+  Gravel-Ride) – inklusive Retry-Verhalten bei `429`/`504`.
+- **Noch nicht verifiziert:** tatsächliches `kubectl apply` gegen ein
+  echtes k3s-Cluster und ob `readOnlyRootFilesystem: true` dort
+  problemlos läuft (nur YAML-syntaktisch geprüft). Der GitHub-Actions-Build
+  selbst (arm64+amd64 via QEMU) ist ebenfalls noch nicht gegen einen echten
+  Actions-Lauf verifiziert worden.
+
 ## Lizenz
 
 MIT, siehe [LICENSE](LICENSE).
