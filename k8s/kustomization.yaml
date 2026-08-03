@@ -1,0 +1,6 @@
+# Deployment + Service fuer privates Heimnetz-Cluster (NodePort, kein
+# Ingress noetig, da nicht oeffentlich erreichbar):
+#   kubectl apply -k k8s/
+resources:
+  - deployment.yaml
+  - service.yaml

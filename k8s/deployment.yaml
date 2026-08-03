@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpx-surface-mcp
+  labels:
+    app: gpx-surface-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpx-surface-mcp
+  template:
+    metadata:
+      labels:
+        app: gpx-surface-mcp
+    spec:
+      # Falls dein Cluster gemischte Architekturen hat (z.B. ein x86-Mini-PC
+      # als Master + Pi-Worker) stellt das sicher, dass der Pod nur auf
+      # ARM-Nodes landet. Bei reinem Pi-Cluster schadet es nicht, ist aber
+      # optional.
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      # Nur noetig, falls das ghcr.io-Image PRIVATE ist. Secret vorher anlegen:
+      #   kubectl create secret docker-registry ghcr-pull-secret \
+      #     --docker-server=ghcr.io \
+      #     --docker-username=<dein-github-user> \
+      #     --docker-password=<github-PAT-mit-read:packages> \
+      #     --docker-email=<deine-email>
+      # imagePullSecrets:
+      #   - name: ghcr-pull-secret
+      containers:
+        - name: gpx-surface-mcp
+          # ARM64-Image, siehe README fuer den buildx-Build-Befehl.
+          image: ghcr.io/CHANGE_ME/gpx-surface-mcp:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: MCP_TRANSPORT
+              value: "streamable-http"
+            - name: MCP_HOST
+              value: "0.0.0.0"
+            - name: MCP_PORT
+              value: "8000"
+          resources:
+            # Bewusst klein gehalten fuer Raspberry Pi - ein einzelner
+            # Overpass-Call + lokales Punkt-Matching ist nicht
+            # rechenintensiv. Bei sehr langen Routen (>150km) ggf.
+            # memory-limit erhoehen.
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          # httpGet ist fuer den MCP-Endpunkt (/mcp, erwartet POST) nicht
+          # zuverlaessig nutzbar - tcpSocket prueft nur, ob der Server
+          # ueberhaupt lauscht.
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            # Sicherheitsnetz fuer readOnlyRootFilesystem - falls irgendeine
+            # Python-Lib doch mal in /tmp schreiben will (z.B. Zertifikate).
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

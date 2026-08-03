@@ -1,0 +1,12 @@
+.git/
+.gitignore
+**/__pycache__/
+**/*.pyc
+**/venv/
+**/.venv/
+dist/
+*.skill
+claude-skill/
+README.md
+LICENSE
+k8s/
