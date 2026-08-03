@@ -31,6 +31,13 @@ nur an einer Stelle.
 
 Kein API-Key nötig – Overpass ist öffentlich zugänglich (siehe
 [dev.overpass-api.de](https://dev.overpass-api.de) für Fair-Use-Regeln).
+Der öffentliche Server antwortet bei Last gelegentlich mit `429` (Rate
+Limit) oder `502`/`503`/`504` (Timeout/Überlastung) – die Abfrage
+(`fetch_ways_in_bbox` in `core/surface_analysis.py`) retried solche
+transienten Fehler automatisch mit exponentiellem Backoff (bis zu 3
+Versuche, Wartezeit verdoppelt sich, respektiert einen `Retry-After`-Header
+falls vorhanden). Andere Fehler (z.B. nicht erreichbarer Host) werden
+bewusst nicht retried, da ein erneuter Versuch dort nichts ändert.
 
 ## Repo-Struktur
 
@@ -194,8 +201,11 @@ Erzeugt `dist/gpx-surface-analysis.skill`.
 
 ## Grenzen
 
-- Sehr lange Routen (>150 km) führen zu größeren Overpass-Antworten und
-  etwas längerer Laufzeit.
+- Sehr lange Routen (>150 km) bzw. Routen mit großer Bounding Box (>~15km
+  Kantenlänge) führen zu größeren Overpass-Antworten und können trotz
+  automatischem Retry gelegentlich mit Timeout fehlschlagen, wenn der
+  öffentliche Server stark ausgelastet ist – ein erneuter manueller Versuch
+  hilft in dem Fall meist.
 - Fehlt in OSM das `surface`-Tag, wird grob über den `highway`-Tag
   geschätzt (z.B. `track` → Schotter) – eine Näherung, keine Garantie.
 - Bei ungenauem GPS-Track lässt sich die Match-Toleranz über

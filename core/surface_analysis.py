@@ -24,6 +24,7 @@ Voraussetzung: Internetzugriff auf overpass-api.de (kein API-Key noetig).
 """
 
 import math
+import time
 from collections import defaultdict
 from typing import Optional
 
@@ -32,6 +33,15 @@ import requests
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 USER_AGENT = "gpx-surface-analyzer/1.0 (personal cycling analysis tool)"
+
+# HTTP-Statuscodes, bei denen ein erneuter Versuch sinnvoll ist (transiente
+# Server-/Rate-Limit-Fehler des oeffentlichen Overpass-Servers). Andere
+# Fehler (z.B. ConnectionError, weil der Host in einer Sandbox nicht
+# erreichbar ist) werden bewusst NICHT retried, da ein erneuter Versuch
+# dort nichts aendert.
+RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE_S = 5.0
 
 # Puffer (Grad) rund um die Route bei der Overpass-Abfrage.
 # ~0.003 Grad entspricht grob 300m - deckt GPS-Ungenauigkeiten ab.
@@ -181,14 +191,32 @@ def fetch_ways_in_bbox(bbox: tuple[float, float, float, float]) -> list[dict]:
     );
     out geom tags;
     """
-    resp = requests.post(
-        OVERPASS_URL,
-        data={"data": query},
-        headers={"User-Agent": USER_AGENT},
-        timeout=90,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+
+    data = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            resp = requests.post(
+                OVERPASS_URL,
+                data={"data": query},
+                headers={"User-Agent": USER_AGENT},
+                timeout=90,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            break
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else None
+            if status not in RETRYABLE_STATUS_CODES or attempt == MAX_RETRIES:
+                raise
+            retry_after = e.response.headers.get("Retry-After") if e.response is not None else None
+            if retry_after is not None:
+                try:
+                    wait_s = float(retry_after)
+                except ValueError:
+                    wait_s = RETRY_BACKOFF_BASE_S * (2 ** attempt)
+            else:
+                wait_s = RETRY_BACKOFF_BASE_S * (2 ** attempt)
+            time.sleep(wait_s)
 
     ways = []
     for el in data.get("elements", []):
