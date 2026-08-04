@@ -1,106 +1,105 @@
 ---
 name: gpx-surface-analysis
-description: Analysiert eine GPX-Fahrradroute und berechnet den prozentualen Anteil verschiedener Wegoberflächen (Asphalt, Schotter, unbefestigt, Pflaster) anhand von OpenStreetMap-Daten. Immer verwenden, wenn der Nutzer nach dem Oberflächen-Anteil, Schotter/Asphalt-Verhältnis, "wie viel Prozent Gravel/unbefestigt" oder der Wegbeschaffenheit einer hochgeladenen oder referenzierten .gpx-Datei fragt - auch wenn er nur "analysiere meine Strecke" oder "wie sieht der Untergrund aus" sagt, ohne "Oberfläche" explizit zu erwähnen.
+description: Analyses a GPX cycling route and computes the percentage breakdown of road surface types (asphalt, gravel, unpaved, cobblestone) using OpenStreetMap data. Use this whenever the user asks about the surface composition, gravel/asphalt ratio, "what percentage is gravel/unpaved", or the road conditions of an uploaded or referenced .gpx file — even if they just say "analyse my route" or "what's the terrain like" without explicitly mentioning "surface".
 ---
 
 # GPX Surface Analysis
 
-Berechnet, welcher Anteil einer gefahrenen (oder geplanten) Fahrradroute auf
-Asphalt, Schotter, unbefestigten Wegen etc. verläuft. Datenquelle ist
-OpenStreetMap über die öffentliche Overpass API (kein API-Key nötig).
+Calculates what share of a ridden (or planned) cycling route runs on
+asphalt, gravel, unpaved tracks, etc. Data source is OpenStreetMap via
+the public Overpass API (no API key needed).
 
-Die eigentliche Analyse-Logik liegt in `../core/surface_analysis.py` (Teil
-des `gpx-surface-analyzer`-Repos) und wird auch vom MCP-Server im selben
-Repo genutzt. Dieses Skill-Skript ist nur ein CLI-Wrapper darum.
+The actual analysis logic lives in `../core/surface_analysis.py` (part of
+the `gpx-surface-analyzer` repo) and is also used by the MCP server in the
+same repo. This skill script is just a CLI wrapper around it.
 
-## Wann dieser Skill greift
+## When this skill applies
 
-- Nutzer lädt eine `.gpx`-Datei hoch und fragt nach Oberfläche/Untergrund/Belag
-- Nutzer fragt "wie viel % meiner Strava-Tour war Schotter/Gravel/Asphalt"
-- Nutzer möchte mehrere Routen hinsichtlich Wegbeschaffenheit vergleichen
+- User uploads a `.gpx` file and asks about surface type / road conditions
+- User asks "what % of my Strava ride was gravel/unpaved/asphalt"
+- User wants to compare multiple routes by surface composition
 
-## Voraussetzung: Internetzugriff
+## Prerequisite: internet access
 
-Das Skript braucht ausgehenden HTTPS-Zugriff auf `overpass-api.de`. In der
-sandboxed Ausführungsumgebung von Claude.ai (claude.ai Chat mit
-Code-Execution) ist dieser Host **nicht** in der Netzwerk-Whitelist – das
-Skript schlägt dort mit einem Verbindungsfehler fehl. Es funktioniert
-zuverlässig in Umgebungen mit freiem Internetzugriff, z.B.:
+The script needs outbound HTTPS access to `overpass-api.de`. In the
+sandboxed execution environment of Claude.ai (claude.ai chat with code
+execution) that host is **not** on the network allowlist — the script will
+fail with a connection error there. It works reliably in environments with
+unrestricted internet access, e.g.:
 
-- **Claude Code** (lokal auf dem eigenen Rechner)
-- **Claude Cowork** (falls dort Netzwerkzugriff erlaubt ist)
+- **Claude Code** (running locally on the user's machine)
+- **Claude Cowork** (if network access is permitted there)
 
-Wenn eine Ausführung mit "Connection refused" oder ähnlichem fehlschlägt,
-sag dem Nutzer direkt, dass es an den Netzwerk-Einschränkungen der
-aktuellen Umgebung liegt, statt es mehrfach erneut zu versuchen.
+If an execution fails with "Connection refused" or similar, tell the user
+directly that it is due to network restrictions in the current environment,
+rather than retrying multiple times.
 
-## Voraussetzung: Repo-Struktur
+## Prerequisite: repo structure
 
-Dieses Skript importiert `core.surface_analysis` relativ zum Repo-Root
-(zwei Ebenen über `scripts/`). Es muss also innerhalb des geklonten
-`gpx-surface-analyzer`-Repos liegen, nicht isoliert kopiert werden.
+This script imports `core.surface_analysis` relative to the repo root
+(two levels above `scripts/`). It must therefore be inside the cloned
+`gpx-surface-analyzer` repo, not copied out in isolation.
 
-## Vorgehen
+## Procedure
 
-1. **Abhängigkeiten sicherstellen** (einmalig, falls nicht vorhanden):
+1. **Ensure dependencies** (once, if not already installed):
    ```bash
    pip install -r <repo-root>/claude-skill/requirements.txt --break-system-packages
    ```
 
-2. **Skript ausführen** mit dem Pfad zur GPX-Datei:
+2. **Run the script** with the path to the GPX file:
    ```bash
-   python3 <repo-root>/claude-skill/scripts/analyze_surface.py /pfad/zur/route.gpx
+   python3 <repo-root>/claude-skill/scripts/analyze_surface.py /path/to/route.gpx
    ```
-   Optional Ergebnis direkt in eine Datei schreiben:
+   Optionally write the result directly to a file:
    ```bash
-   python3 <repo-root>/claude-skill/scripts/analyze_surface.py /pfad/zur/route.gpx --output ergebnis.json
+   python3 <repo-root>/claude-skill/scripts/analyze_surface.py /path/to/route.gpx --output result.json
    ```
 
-3. **Ergebnis interpretieren und dem Nutzer zusammenfassen.** Das Skript
-   gibt JSON zurück, z.B.:
+3. **Interpret the result and summarise for the user.** The script returns
+   JSON, e.g.:
    ```json
    {
      "total_distance_km": 42.7,
      "matched_distance_km": 41.9,
      "surface_percentages": {
        "asphalt": 68.4,
-       "schotter": 24.1,
-       "unbefestigt": 5.2,
-       "pflaster": 2.3
+       "gravel": 24.1,
+       "unpaved": 5.2,
+       "cobblestone": 2.3
      },
      "unmatched_percent": 1.9
    }
    ```
-   Nicht nur das rohe JSON ausgeben, sondern die Zahlen in normaler Sprache
-   einordnen (z.B. "Deine Route war zu gut zwei Dritteln Asphalt, knapp ein
-   Viertel Schotter").
+   Don't just output the raw JSON — put the numbers into plain language
+   (e.g. "Your route was about two thirds asphalt, with nearly a quarter
+   gravel").
 
-## Funktionsweise (Hintergrund, bei Rückfragen)
+## How it works (background, for follow-up questions)
 
-- Eine einzelne Overpass-Abfrage holt alle `highway=*`-Wege in der
-  Bounding Box der gesamten Route (statt einer Abfrage pro GPX-Punkt –
-  schont den öffentlichen Server und ist deutlich schneller).
-- Jedes Streckensegment wird per Punkt-zu-Liniensegment-Distanz dem
-  nächstgelegenen OSM-Weg zugeordnet (Toleranz: 30m).
-- Fehlt das `surface`-Tag in OSM, wird grob über den `highway`-Tag
-  geschätzt (z.B. `track` → Schotter, `cycleway` → Asphalt). Das ist eine
-  Näherung, keine Garantie – bei Rückfragen des Nutzers zur Genauigkeit
-  transparent machen.
-- `unmatched_percent` zeigt den Anteil, der keinem OSM-Weg zugeordnet
-  werden konnte (z.B. abseits kartierter Wege oder bei lückenhaften
-  OSM-Daten).
+- A single Overpass query fetches all `highway=*` ways within the bounding
+  box of the entire route (rather than one query per GPX point — keeps the
+  public server load low and is significantly faster).
+- Each route segment is matched to the nearest OSM way via
+  point-to-line-segment distance (tolerance: 30 m).
+- If the `surface` tag is missing in OSM, the `highway` tag is used as a
+  rough fallback (e.g. `track` → gravel, `cycleway` → asphalt). This is an
+  approximation, not a guarantee — be transparent about this if the user
+  asks about accuracy.
+- `unmatched_percent` shows the share that could not be matched to any OSM
+  way (e.g. off mapped tracks or gaps in OSM data).
 
-## Grenzen
+## Limitations
 
-- Sehr lange Routen (>150 km) führen zu größeren Overpass-Antworten und
-  etwas längerer Laufzeit, bleiben aber grundsätzlich handhabbar.
-- Bei ungenauem GPS-Track (z.B. dichter Wald) kann die 30m-Toleranz in
-  `core/surface_analysis.py` (Konstante `MAX_MATCH_DISTANCE_M`) bei Bedarf
-  erhöht werden.
+- Very long routes (>150 km) produce larger Overpass responses and slightly
+  longer run times, but remain manageable in principle.
+- For inaccurate GPS tracks (e.g. dense forest) the 30 m tolerance in
+  `core/surface_analysis.py` (constant `MAX_MATCH_DISTANCE_M`) can be
+  increased if needed.
 
-## Als eigenständiges .skill-Paket verteilen
+## Distributing as a standalone .skill package
 
-Für die Installation über die Claude-Skill-Karte (unabhängig vom Repo)
-muss `core/surface_analysis.py` mit in den Skill-Ordner kopiert werden,
-da ein `.skill`-Paket in sich geschlossen sein muss. Siehe
-`scripts/build_standalone_skill.sh` im Repo-Root dafür.
+For installation via the Claude skill card (independent of the repo),
+`core/surface_analysis.py` must be copied into the skill folder, as a
+`.skill` package must be self-contained. See
+`scripts/build_standalone_skill.sh` in the repo root for this.
