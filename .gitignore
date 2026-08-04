@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Build-Artefakte
+dist/
+*.skill
+
+# Editor/OS
+.DS_Store
+.vscode/
+.idea/
