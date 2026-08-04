@@ -1,26 +1,25 @@
 """
-GPX Surface Analysis - Kernlogik
+GPX Surface Analysis - Core Logic
 ===================================
 
-Gemeinsam genutztes Modul: berechnet den prozentualen Anteil verschiedener
-Wegoberflaechen (Asphalt, Schotter, unbefestigt, ...) entlang einer
-GPX-Route, basierend auf OpenStreetMap/Overpass-Daten.
+Shared module: computes the percentage breakdown of road surface types
+(asphalt, gravel, unpaved, cobblestone, ...) along a GPX route, based on
+OpenStreetMap data via the public Overpass API.
 
-Wird sowohl vom MCP-Server (mcp-server/server.py) als auch vom
-Claude-Skill-Skript (claude-skill/scripts/analyze_surface.py) importiert,
-damit die Logik nur an EINER Stelle gepflegt werden muss.
+Used by both the MCP server (mcp-server/server.py) and the Claude skill
+script (claude-skill/scripts/analyze_surface.py) so the logic lives in
+exactly ONE place.
 
-Funktionsweise:
-1. GPX parsen -> Track-Punkte extrahieren
-2. Bounding Box der gesamten Route berechnen (+ Puffer)
-3. EINE Overpass-Abfrage: alle Wege (highway=*) in dieser Bounding Box holen,
-   inkl. Geometrie und surface/highway-Tags
-4. Fuer jedes Track-Segment den naechstgelegenen OSM-Weg per
-   Punkt-zu-Liniensegment-Distanz finden (mit einfachem Grid-Index fuer Speed)
-5. Streckenlaengen pro Oberflaechenkategorie aufsummieren und Prozente
-   berechnen
+How it works:
+1. Parse GPX -> extract track points
+2. Compute bounding box of the entire route (+ padding)
+3. ONE Overpass query: fetch all ways (highway=*) in that bounding box,
+   including geometry and surface/highway tags
+4. For each track segment find the nearest OSM way via point-to-line-segment
+   distance (with a simple grid index for speed)
+5. Sum up segment lengths per surface category and return percentages
 
-Voraussetzung: Internetzugriff auf overpass-api.de (kein API-Key noetig).
+Requires: outbound HTTPS access to overpass-api.de (no API key needed).
 """
 
 import math
@@ -34,53 +33,51 @@ import requests
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 USER_AGENT = "gpx-surface-analyzer/1.0 (personal cycling analysis tool)"
 
-# HTTP-Statuscodes, bei denen ein erneuter Versuch sinnvoll ist (transiente
-# Server-/Rate-Limit-Fehler des oeffentlichen Overpass-Servers). Andere
-# Fehler (z.B. ConnectionError, weil der Host in einer Sandbox nicht
-# erreichbar ist) werden bewusst NICHT retried, da ein erneuter Versuch
-# dort nichts aendert.
+# HTTP status codes that warrant a retry (transient server/rate-limit errors
+# from the public Overpass server). Other errors (e.g. ConnectionError when
+# the host is unreachable in a sandbox) are intentionally NOT retried, since
+# retrying won't help there.
 RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
 MAX_RETRIES = 3
 RETRY_BACKOFF_BASE_S = 5.0
 
-# Puffer (Grad) rund um die Route bei der Overpass-Abfrage.
-# ~0.003 Grad entspricht grob 300m - deckt GPS-Ungenauigkeiten ab.
+# Padding (degrees) added around the route for the Overpass query.
+# ~0.003 degrees is roughly 300m — covers GPS inaccuracies.
 BBOX_PADDING_DEG = 0.003
 
-# Ab welcher Entfernung (Meter) ein Track-Punkt NICHT mehr einem Weg
-# zugeordnet wird.
+# Maximum distance (metres) at which a track point is still matched to a way.
 MAX_MATCH_DISTANCE_M = 30.0
 
-# Kantenlaenge der Grid-Zellen (Grad) fuer den raeumlichen Index.
+# Side length of grid cells (degrees) for the spatial index.
 GRID_CELL_DEG = 0.005
 
-# Klassifizierung roher OSM surface-Werte in grobe Kategorien
+# Map raw OSM surface tag values to broad categories.
 SURFACE_CATEGORIES = {
     "asphalt": "asphalt",
     "paved": "asphalt",
     "concrete": "asphalt",
     "concrete:plates": "asphalt",
     "concrete:lanes": "asphalt",
-    "paving_stones": "pflaster",
-    "sett": "pflaster",
-    "cobblestone": "pflaster",
-    "metal": "sonstig_befestigt",
-    "wood": "sonstig_befestigt",
-    "compacted": "schotter",
-    "fine_gravel": "schotter",
-    "gravel": "schotter",
-    "pebblestone": "schotter",
-    "unpaved": "unbefestigt",
-    "ground": "unbefestigt",
-    "dirt": "unbefestigt",
-    "earth": "unbefestigt",
-    "grass": "unbefestigt",
-    "sand": "unbefestigt",
-    "mud": "unbefestigt",
-    "woodchips": "unbefestigt",
+    "paving_stones": "cobblestone",
+    "sett": "cobblestone",
+    "cobblestone": "cobblestone",
+    "metal": "other_paved",
+    "wood": "other_paved",
+    "compacted": "gravel",
+    "fine_gravel": "gravel",
+    "gravel": "gravel",
+    "pebblestone": "gravel",
+    "unpaved": "unpaved",
+    "ground": "unpaved",
+    "dirt": "unpaved",
+    "earth": "unpaved",
+    "grass": "unpaved",
+    "sand": "unpaved",
+    "mud": "unpaved",
+    "woodchips": "unpaved",
 }
 
-# Fallback-Klassifizierung anhand des highway-Tags, falls surface fehlt.
+# Fallback classification based on the highway tag when surface tag is missing.
 HIGHWAY_FALLBACK = {
     "cycleway": "asphalt",
     "residential": "asphalt",
@@ -90,19 +87,19 @@ HIGHWAY_FALLBACK = {
     "unclassified": "asphalt",
     "living_street": "asphalt",
     "service": "asphalt",
-    "track": "schotter",
-    "path": "unbefestigt",
-    "bridleway": "unbefestigt",
-    "footway": "pflaster",
+    "track": "gravel",
+    "path": "unpaved",
+    "bridleway": "unpaved",
+    "footway": "cobblestone",
 }
 
 
 # ---------------------------------------------------------------------------
-# Geometrie-Hilfsfunktionen
+# Geometry helpers
 # ---------------------------------------------------------------------------
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Distanz zwischen zwei Koordinaten in Metern (Great-Circle)."""
+    """Great-circle distance between two coordinates in metres."""
     r = 6371000.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -112,7 +109,7 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _local_xy(lat: float, lon: float, ref_lat: float) -> tuple[float, float]:
-    """Grobe lokale Projektion (Meter) fuer schnelle Kurzdistanz-Berechnung."""
+    """Rough local projection (metres) for fast short-distance calculations."""
     m_per_deg_lat = 111320.0
     m_per_deg_lon = 111320.0 * math.cos(math.radians(ref_lat))
     return lon * m_per_deg_lon, lat * m_per_deg_lat
@@ -123,7 +120,7 @@ def point_segment_distance_m(
     a_lat: float, a_lon: float,
     b_lat: float, b_lon: float,
 ) -> float:
-    """Kuerzeste Distanz von Punkt P zum Liniensegment A-B, in Metern."""
+    """Shortest distance from point P to line segment A-B, in metres."""
     ref_lat = p_lat
     px, py = _local_xy(p_lat, p_lon, ref_lat)
     ax, ay = _local_xy(a_lat, a_lon, ref_lat)
@@ -146,11 +143,11 @@ def classify_surface(tags: dict) -> str:
     highway = tags.get("highway")
     if highway in HIGHWAY_FALLBACK:
         return HIGHWAY_FALLBACK[highway]
-    return "unbekannt"
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
-# GPX parsen
+# GPX parsing
 # ---------------------------------------------------------------------------
 
 def parse_gpx_points(gpx_text: str) -> list[tuple[float, float]]:
@@ -168,7 +165,7 @@ def parse_gpx_points(gpx_text: str) -> list[tuple[float, float]]:
 
 
 # ---------------------------------------------------------------------------
-# Overpass-Abfrage
+# Overpass query
 # ---------------------------------------------------------------------------
 
 def build_bbox(points: list[tuple[float, float]], padding: float) -> tuple[float, float, float, float]:
@@ -230,7 +227,7 @@ def fetch_ways_in_bbox(bbox: tuple[float, float, float, float]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Raeumlicher Grid-Index fuer schnelles Nearest-Segment-Matching
+# Spatial grid index for fast nearest-segment matching
 # ---------------------------------------------------------------------------
 
 def build_grid_index(ways: list[dict], cell_deg: float) -> dict:
@@ -278,29 +275,28 @@ def find_nearest_surface(
 
 
 # ---------------------------------------------------------------------------
-# Oeffentliche Hauptfunktion
+# Public entry point
 # ---------------------------------------------------------------------------
 
 def analyze_gpx_surface(gpx_text: str) -> dict:
     """
-    Analysiert eine GPX-Route und berechnet den prozentualen Anteil
-    verschiedener Wegoberflaechen.
+    Analyse a GPX route and compute the percentage breakdown of road surface types.
 
     Args:
-        gpx_text: Vollstaendiger Inhalt einer GPX-Datei als String.
+        gpx_text: Full content of a GPX file as a string.
 
     Returns:
-        Dict mit total_distance_km, matched_distance_km,
-        surface_percentages und unmatched_percent (oder "error").
+        Dict with total_distance_km, matched_distance_km,
+        surface_percentages and unmatched_percent (or "error").
     """
     points = parse_gpx_points(gpx_text)
     if len(points) < 2:
-        return {"error": "GPX enthaelt weniger als 2 Track-Punkte, keine Analyse moeglich."}
+        return {"error": "GPX contains fewer than 2 track points — cannot analyse."}
 
     bbox = build_bbox(points, BBOX_PADDING_DEG)
     ways = fetch_ways_in_bbox(bbox)
     if not ways:
-        return {"error": "Keine OSM-Wege in der Bounding Box der Route gefunden."}
+        return {"error": "No OSM ways found within the bounding box of the route."}
 
     grid = build_grid_index(ways, GRID_CELL_DEG)
 
@@ -328,7 +324,7 @@ def analyze_gpx_surface(gpx_text: str) -> dict:
             distance_by_category[category] += seg_len
 
     if total_distance == 0:
-        return {"error": "Route hat eine Gesamtlaenge von 0m."}
+        return {"error": "Route has a total length of 0 m."}
 
     surface_percentages = {
         cat: round(dist / total_distance * 100, 1)

@@ -1,74 +1,73 @@
 # gpx-surface-analyzer
 
-Analysiert GPX-Fahrradrouten und berechnet den prozentualen Anteil
-verschiedener Wegoberflächen (Asphalt, Schotter, unbefestigt, Pflaster)
-anhand von OpenStreetMap-Daten über die öffentliche Overpass API.
+Analyses GPX cycling routes and computes the percentage breakdown of road
+surface types (asphalt, gravel, unpaved, cobblestone) using OpenStreetMap
+data via the public Overpass API.
 
-Zwei Nutzungsarten, eine gemeinsame Kernlogik:
+Two ways to use it, one shared core:
 
-- **`mcp-server/`** – MCP-Server für Claude Desktop / Claude Code, stellt
-  die Analyse als Tool (`analyze_gpx_surface`, `analyze_gpx_file`) bereit
-- **`claude-skill/`** – Claude Skill (SKILL.md + Skript), das Claude
-  selbstständig ausführt, wenn ein Nutzer nach der Oberfläche einer
-  hochgeladenen GPX-Route fragt
+- **`mcp-server/`** – MCP server for Claude Desktop / Claude Code, exposes
+  the analysis as tools (`analyze_gpx_surface`, `analyze_gpx_file`)
+- **`claude-skill/`** – Claude Skill (SKILL.md + script) that Claude runs
+  autonomously when a user asks about the surface composition of an uploaded
+  GPX route
 
-Beide greifen auf `core/surface_analysis.py` zurück – die eigentliche
-Logik (GPX-Parsing, Overpass-Abfrage, Matching, Klassifizierung) existiert
-nur an einer Stelle.
+Both use `core/surface_analysis.py` — the actual logic (GPX parsing,
+Overpass query, matching, classification) lives in exactly one place.
 
-## Funktionsweise
+## How it works
 
-1. GPX parsen -> Track-Punkte extrahieren
-2. Bounding Box der gesamten Route berechnen (+ Puffer)
-3. **Eine einzige** Overpass-Abfrage holt alle Wege (`highway=*`) in dieser
-   Box inkl. Geometrie und `surface`-Tag – bewusst nicht pro Punkt, um den
-   öffentlichen Server zu schonen und die Analyse schnell zu halten
-4. Jedes Streckensegment wird per Punkt-zu-Liniensegment-Distanz dem
-   nächstgelegenen OSM-Weg zugeordnet (Toleranz: 30m, per Grid-Index
-   beschleunigt)
-5. Streckenlängen pro Oberflächenkategorie werden aufsummiert und als
-   Prozentsatz der Gesamtstrecke zurückgegeben
+1. Parse GPX → extract track points
+2. Compute bounding box of the entire route (+ padding)
+3. **One single** Overpass query fetches all ways (`highway=*`) in that box
+   including geometry and `surface` tag — deliberately not one query per
+   point, to be kind to the public server and keep analysis fast
+4. Each route segment is matched to the nearest OSM way via
+   point-to-line-segment distance (tolerance: 30 m, accelerated with a grid
+   index)
+5. Segment lengths are summed per surface category and returned as
+   percentages of the total distance
 
-Kein API-Key nötig – Overpass ist öffentlich zugänglich (siehe
-[dev.overpass-api.de](https://dev.overpass-api.de) für Fair-Use-Regeln).
-Der öffentliche Server antwortet bei Last gelegentlich mit `429` (Rate
-Limit) oder `502`/`503`/`504` (Timeout/Überlastung) – die Abfrage
-(`fetch_ways_in_bbox` in `core/surface_analysis.py`) retried solche
-transienten Fehler automatisch mit exponentiellem Backoff (bis zu 3
-Versuche, Wartezeit verdoppelt sich, respektiert einen `Retry-After`-Header
-falls vorhanden). Andere Fehler (z.B. nicht erreichbarer Host) werden
-bewusst nicht retried, da ein erneuter Versuch dort nichts ändert.
+No API key required — Overpass is publicly accessible (see
+[dev.overpass-api.de](https://dev.overpass-api.de) for fair-use guidelines).
+The public server occasionally responds with `429` (rate limit) or
+`502`/`503`/`504` (timeout/overload) under load — the query
+(`fetch_ways_in_bbox` in `core/surface_analysis.py`) retries such transient
+errors automatically with exponential backoff (up to 3 attempts, wait time
+doubles each time, honours a `Retry-After` header if present). Other errors
+(e.g. unreachable host) are intentionally not retried, as retrying won't
+help.
 
-## Repo-Struktur
+## Repository structure
 
 ```
 gpx-surface-analyzer/
 ├── core/
 │   ├── __init__.py
-│   └── surface_analysis.py       # gemeinsame Kernlogik (einzige Quelle der Wahrheit)
+│   └── surface_analysis.py       # shared core logic (single source of truth)
 ├── mcp-server/
-│   ├── server.py                  # MCP-Wrapper, importiert core/ (stdio + streamable-http)
+│   ├── server.py                  # MCP wrapper, imports core/ (stdio + streamable-http)
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── claude-skill/
 │   ├── SKILL.md
 │   ├── requirements.txt
 │   └── scripts/
-│       └── analyze_surface.py     # CLI-Wrapper, importiert core/
+│       └── analyze_surface.py     # CLI wrapper, imports core/
 ├── k8s/
-│   ├── deployment.yaml              # NodePort-Setup fuer privates Heimnetz, nodeSelector arm64
+│   ├── deployment.yaml            # NodePort setup for private home network, arm64 nodeSelector
 │   ├── service.yaml
 │   └── kustomization.yaml
 ├── scripts/
-│   └── build_standalone_skill.sh  # baut ein in sich geschlossenes .skill-Paket
+│   └── build_standalone_skill.sh  # builds a self-contained .skill package
 ├── .github/
 │   └── workflows/
-│       └── docker-publish.yml     # baut mcp-server-Image (arm64+amd64), pusht zu ghcr.io auf main/Tags
+│       └── docker-publish.yml     # builds mcp-server image (arm64+amd64), pushes to ghcr.io on main/tags
 ├── .dockerignore
 └── README.md
 ```
 
-## MCP-Server nutzen
+## Using the MCP server
 
 ```bash
 cd mcp-server
@@ -77,130 +76,129 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-In `claude_desktop_config.json` (oder der MCP-Config von Claude Code):
+In `claude_desktop_config.json` (or the MCP config for Claude Code):
 
 ```json
 {
   "mcpServers": {
     "gpx-surface-analyzer": {
-      "command": "/absoluter/pfad/zu/gpx-surface-analyzer/mcp-server/venv/bin/python3",
-      "args": ["/absoluter/pfad/zu/gpx-surface-analyzer/mcp-server/server.py"]
+      "command": "/absolute/path/to/gpx-surface-analyzer/mcp-server/venv/bin/python3",
+      "args": ["/absolute/path/to/gpx-surface-analyzer/mcp-server/server.py"]
     }
   }
 }
 ```
 
-### Containerisiert (Docker / Kubernetes)
+### Containerised (Docker / Kubernetes)
 
-Für lokale stdio-Nutzung (Claude Desktop/Code) brauchst du **kein**
-Docker/K8s – das lohnt sich erst, wenn der Server dauerhaft laufen und per
-HTTP erreichbar sein soll. Der Server unterstützt dafür den
-`streamable-http`-Transport zusätzlich zu stdio.
+For local stdio use (Claude Desktop/Code) you do **not** need Docker/K8s —
+that only makes sense when you want the server to run persistently and be
+reachable over HTTP. The server supports the `streamable-http` transport in
+addition to stdio for that purpose.
 
-Die folgende Anleitung ist auf ein **privates Heimnetz-Cluster auf
-Raspberry Pi (k3s), nicht öffentlich erreichbar** zugeschnitten – Zugriff
-nur aus dem eigenen LAN über NodePort, kein Ingress/TLS nötig.
+The instructions below are tailored to a **private home-network cluster on
+Raspberry Pi (k3s), not publicly reachable** — access only from the local
+LAN via NodePort, no ingress/TLS needed.
 
-**1. Image bauen und zu ghcr.io pushen**
+**1. Build the image and push to ghcr.io**
 
-Passiert automatisch über `.github/workflows/docker-publish.yml`: bei jedem
-Push auf `main` (der `core/` oder `mcp-server/` ändert) sowie bei
-Versions-Tags (`v*`) baut GitHub Actions das Image für `linux/arm64` *und*
-`linux/amd64` und pusht es nach
-`ghcr.io/<github-user>/gpx-surface-mcp:latest` (zusätzlich getaggt mit
-Short-SHA bzw. Versionsnummer bei Tags). Auf Pull Requests wird nur
-gebaut, nicht gepusht (Validierung ohne Veröffentlichung). Kein manueller
-Schritt nötig – einfach `git push` und in der Actions-Tab den Lauf
-beobachten. Das erstmalig erzeugte GHCR-Package ist standardmäßig
-**privat**; das GitHub-Actions-Token (`GITHUB_TOKEN`) hat automatisch
-Push-Rechte darauf, für den Pull auf den Pi-Nodes siehe Pull-Secret unten.
+This happens automatically via `.github/workflows/docker-publish.yml`: on
+every push to `main` that touches `core/` or `mcp-server/`, and on version
+tags (`v*`), GitHub Actions builds the image for `linux/arm64` *and*
+`linux/amd64` and pushes it to
+`ghcr.io/<github-user>/gpx-surface-mcp:latest` (also tagged with the short
+SHA, or the version number for tagged releases). On pull requests the image
+is built but not pushed (validation without publishing). No manual step
+needed — just `git push` and watch the run in the Actions tab. The first
+GHCR package created is **private** by default; the GitHub Actions token
+(`GITHUB_TOKEN`) automatically has push access, but for pulling on the Pi
+nodes see the pull secret note below.
 
-Manuell/lokal bauen und pushen geht weiterhin, z.B. für schnelle
-Iterationen ohne CI-Wartezeit. Raspberry Pi läuft auf ARM64 (bei 64-Bit-OS
-– mit `uname -m` auf dem Pi prüfen, sollte `aarch64` zeigen). Falls du von
-einem Apple-Silicon-Mac aus baust (z.B. deinem Mac Mini M1), geht das
-nativ ohne Emulation:
+You can still build and push manually for fast local iterations without
+waiting for CI. Raspberry Pi runs arm64 (64-bit OS — verify with `uname -m`
+on the Pi, should show `aarch64`). Building from an Apple Silicon Mac
+(e.g. Mac Mini M1) works natively without emulation:
 
 ```bash
 docker buildx build \
   --platform linux/arm64 \
   -f mcp-server/Dockerfile \
-  -t ghcr.io/<dein-github-user>/gpx-surface-mcp:latest \
+  -t ghcr.io/<your-github-user>/gpx-surface-mcp:latest \
   --push .
 ```
 
-Von einem x86-Rechner aus braucht `buildx` dafür QEMU-Emulation (deutlich
-langsamer, aber funktioniert genauso mit demselben Befehl).
+From an x86 machine `buildx` needs QEMU emulation (noticeably slower, but
+works identically with the same command).
 
-Falls das ghcr.io-Package **privat** bleibt, brauchen die Pis ein
-Pull-Secret (einmalig anlegen):
+If the ghcr.io package remains **private**, the Pis need a pull secret
+(create once):
 ```bash
 kubectl create secret docker-registry ghcr-pull-secret \
   --docker-server=ghcr.io \
-  --docker-username=<dein-github-user> \
-  --docker-password=<github-PAT-mit-read:packages-scope> \
-  --docker-email=<deine-email>
+  --docker-username=<your-github-user> \
+  --docker-password=<github-PAT-with-read:packages-scope> \
+  --docker-email=<your-email>
 ```
-und in `k8s/deployment.yaml` den auskommentierten `imagePullSecrets`-Block
-aktivieren. Einfacher: Package in den GitHub-Package-Settings auf "Public"
-stellen, dann entfällt das Secret komplett.
+and enable the commented-out `imagePullSecrets` block in
+`k8s/deployment.yaml`. Alternatively, set the package to "Public" in the
+GitHub Package settings — then no secret is needed at all.
 
-**2. In k3s deployen**
+**2. Deploy to k3s**
 
-`k8s/deployment.yaml`: `image:` auf dein gepushtes Image anpassen, dann:
+Update `image:` in `k8s/deployment.yaml` to point to your pushed image, then:
 ```bash
 kubectl apply -k k8s/
 kubectl get pods -w
 ```
 
-**3. Erreichbarkeit testen**
+**3. Test connectivity**
 
-Der Service ist als `NodePort` auf Port `30800` exponiert – erreichbar
-über die IP **jedes beliebigen** Node im Cluster (auch wenn der Pod nur
-auf einem läuft, k3s routet automatisch weiter):
+The service is exposed as a `NodePort` on port `30800` — reachable via the
+IP of **any** node in the cluster (even if the pod runs on just one, k3s
+routes automatically):
 ```bash
-curl -i http://<ip-eines-beliebigen-pi>:30800/mcp
+curl -i http://<ip-of-any-pi>:30800/mcp
 ```
-Für die Claude-Code-Config auf deinem Mac Mini dann `http://<pi-ip>:30800/mcp`
-als Remote-MCP-Endpunkt eintragen.
+Then add `http://<pi-ip>:30800/mcp` as a remote MCP endpoint in the
+Claude Code config on your Mac.
 
-**Lokal mit Docker testen (bevor es auf den Pis läuft):**
+**Test locally with Docker before deploying to the Pis:**
 ```bash
 docker build -f mcp-server/Dockerfile -t gpx-surface-mcp:latest .
 docker run --rm -p 8000:8000 gpx-surface-mcp:latest
-# MCP-Endpunkt: http://localhost:8000/mcp
+# MCP endpoint: http://localhost:8000/mcp
 ```
 
-> **Egress-Hinweis:** Der Server braucht ausgehenden HTTPS-Zugriff auf
-> `overpass-api.de`. k3s hat standardmäßig keine restriktiven
-> Egress-`NetworkPolicy`s – im Heimnetz-Setup ist das also normalerweise
-> kein Thema, solange dein Router/deine Firewall ausgehendes HTTPS erlaubt.
+> **Egress note:** The server needs outbound HTTPS access to
+> `overpass-api.de`. k3s has no restrictive egress `NetworkPolicy` by
+> default — in a home-network setup this is normally a non-issue as long as
+> your router/firewall allows outbound HTTPS.
 
-## Claude Skill nutzen
+## Using the Claude Skill
 
-Direkt aus dem Repo heraus verweisen (Skript importiert `core/` relativ):
+Run directly from the repo (the script imports `core/` relatively):
 
 ```bash
 pip install -r claude-skill/requirements.txt --break-system-packages
-python3 claude-skill/scripts/analyze_surface.py /pfad/zur/route.gpx
+python3 claude-skill/scripts/analyze_surface.py /path/to/route.gpx
 ```
 
-Für die Installation als eigenständiges `.skill`-Paket (unabhängig vom
-Repo, z.B. über die "Save skill"-Karte in Claude.ai) muss `core/` mit
-hineingebündelt werden:
+To install as a standalone `.skill` package (independent of the repo, e.g.
+via the "Save skill" card in Claude.ai), `core/` must be bundled in:
 
 ```bash
 ./scripts/build_standalone_skill.sh ./dist
 ```
 
-Erzeugt `dist/gpx-surface-analysis.skill`.
+Produces `dist/gpx-surface-analysis.skill`.
 
-> **Netzwerk-Hinweis:** Der Skill braucht Zugriff auf `overpass-api.de`.
-> In der sandboxed Code-Execution-Umgebung von claude.ai ist dieser Host
-> nicht freigeschaltet – der Skill funktioniert zuverlässig in Claude Code
-> (lokal) oder anderen Umgebungen mit freiem Internetzugriff.
+> **Network note:** The skill needs access to `overpass-api.de`. In the
+> sandboxed code-execution environment of claude.ai that host is not on the
+> allowlist — the skill will fail with a connection error there. It works
+> reliably in Claude Code (local) or any other environment with unrestricted
+> internet access.
 
-## Beispiel-Ausgabe
+## Example output
 
 ```json
 {
@@ -208,39 +206,38 @@ Erzeugt `dist/gpx-surface-analysis.skill`.
   "matched_distance_km": 41.9,
   "surface_percentages": {
     "asphalt": 68.4,
-    "schotter": 24.1,
-    "unbefestigt": 5.2,
-    "pflaster": 2.3
+    "gravel": 24.1,
+    "unpaved": 5.2,
+    "cobblestone": 2.3
   },
   "unmatched_percent": 1.9
 }
 ```
 
-## Grenzen
+## Limitations
 
-- Sehr lange Routen (>150 km) bzw. Routen mit großer Bounding Box (>~15km
-  Kantenlänge) führen zu größeren Overpass-Antworten und können trotz
-  automatischem Retry gelegentlich mit Timeout fehlschlagen, wenn der
-  öffentliche Server stark ausgelastet ist – ein erneuter manueller Versuch
-  hilft in dem Fall meist.
-- Fehlt in OSM das `surface`-Tag, wird grob über den `highway`-Tag
-  geschätzt (z.B. `track` → Schotter) – eine Näherung, keine Garantie.
-- Bei ungenauem GPS-Track lässt sich die Match-Toleranz über
-  `MAX_MATCH_DISTANCE_M` in `core/surface_analysis.py` anpassen.
+- Very long routes (>150 km) or routes with a large bounding box (>~15 km
+  edge length) produce larger Overpass responses and can occasionally time
+  out even with automatic retries when the public server is under heavy load
+  — a manual retry usually helps in that case.
+- If the `surface` tag is missing in OSM, the `highway` tag is used as a
+  rough fallback (e.g. `track` → gravel) — an approximation, not a
+  guarantee.
+- For inaccurate GPS tracks the match tolerance can be adjusted via
+  `MAX_MATCH_DISTANCE_M` in `core/surface_analysis.py`.
 
 ## Status
 
-- **Getestet:** Kernlogik, alle drei Einstiegspunkte (core/MCP-Import/
-  Skill-CLI), `.skill`-Paket-Build, und die eigentliche Overpass-Abfrage
-  end-to-end gegen mehrere reale GPX-Routen (Straße, Bikepark-Trail,
-  Schmaler-Trail, sowie ein aus Strava-Aktivitätsdaten via MCP exportierter
-  Gravel-Ride) – inklusive Retry-Verhalten bei `429`/`504`.
-- **Noch nicht verifiziert:** tatsächliches `kubectl apply` gegen ein
-  echtes k3s-Cluster und ob `readOnlyRootFilesystem: true` dort
-  problemlos läuft (nur YAML-syntaktisch geprüft). Der GitHub-Actions-Build
-  selbst (arm64+amd64 via QEMU) ist ebenfalls noch nicht gegen einen echten
-  Actions-Lauf verifiziert worden.
+- **Tested:** core logic, all three entry points (core / MCP import /
+  skill CLI), `.skill` package build, and the Overpass query end-to-end
+  against several real GPX routes (road, bike-park trail, narrow singletrack,
+  and a gravel ride exported from Strava activity data via MCP) — including
+  retry behaviour on `429`/`504`.
+- **Not yet verified:** actual `kubectl apply` against a real k3s cluster
+  and whether `readOnlyRootFilesystem: true` runs without issues there (only
+  YAML-syntactically checked). The GitHub Actions build itself (arm64+amd64
+  via QEMU) has also not yet been verified against a real Actions run.
 
-## Lizenz
+## License
 
-MIT, siehe [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
