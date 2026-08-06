@@ -28,7 +28,7 @@ except ImportError as e:
     print(
         f"Missing package or core module not found: {e}\n"
         f"Please install dependencies with:\n"
-        f"  pip install -r requirements.txt --break-system-packages",
+        f"  pip install -r {SCRIPTS_DIR.parent / 'requirements.txt'} --break-system-packages",
         file=sys.stderr,
     )
     sys.exit(1)
