@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Packages claude-skill/ as a standalone .skill file.
 #
-# The skill is already self-contained: core/surface_analysis.py lives inside
-# claude-skill/scripts/core/, so no extra copying or import-path patching is
-# needed before packaging.
+# The skill is already self-contained: claude-skill/scripts/core/surface_analysis.py
+# lives inside claude-skill/scripts/core/, so no extra copying or import-path
+# patching is needed before packaging.
 #
 # Usage:
 #   ./scripts/build_standalone_skill.sh [output-dir]
