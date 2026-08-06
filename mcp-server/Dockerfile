@@ -22,8 +22,9 @@ WORKDIR /app
 COPY mcp-server/requirements.txt ./mcp-server/requirements.txt
 RUN pip install --no-cache-dir -r mcp-server/requirements.txt
 
-# Jetzt den eigentlichen Code kopieren (core/ + mcp-server/)
-COPY core/ ./core/
+# Copy the actual code: the core package lives in claude-skill/scripts/core/
+# (canonical single source used by both skill and MCP server).
+COPY claude-skill/scripts/core/ ./claude-skill/scripts/core/
 COPY mcp-server/server.py ./mcp-server/server.py
 
 # Nicht als root laufen
