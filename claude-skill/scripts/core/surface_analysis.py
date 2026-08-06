@@ -6,9 +6,9 @@ Shared module: computes the percentage breakdown of road surface types
 (asphalt, gravel, unpaved, cobblestone, ...) along a GPX route, based on
 OpenStreetMap data via the public Overpass API.
 
-Used by both the MCP server (mcp-server/server.py) and the Claude skill
-script (claude-skill/scripts/analyze_surface.py) so the logic lives in
-exactly ONE place.
+Used by both the MCP server (mcp-server/server.py, which adds this package
+to its path) and the Claude skill script (analyze_surface.py, a sibling of
+this package). The logic lives in exactly ONE place.
 
 How it works:
 1. Parse GPX -> extract track points

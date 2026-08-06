@@ -15,13 +15,13 @@ on:
     branches: [main]
     tags: ["v*"]
     paths:
-      - "core/**"
+      - "claude-skill/scripts/core/**"
       - "mcp-server/**"
       - ".github/workflows/docker-publish.yml"
   pull_request:
     branches: [main]
     paths:
-      - "core/**"
+      - "claude-skill/scripts/core/**"
       - "mcp-server/**"
       - ".github/workflows/docker-publish.yml"
   workflow_dispatch: {}

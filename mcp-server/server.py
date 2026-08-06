@@ -3,18 +3,18 @@ GPX Surface Analyzer - MCP Server
 ===================================
 
 Thin MCP wrapper around the shared analysis logic in
-core/surface_analysis.py. See there for the actual implementation
-(GPX parsing, Overpass query, matching).
+claude-skill/scripts/core/surface_analysis.py. See there for the actual
+implementation (GPX parsing, Overpass query, matching).
 """
 
 import os
 import sys
 from pathlib import Path
 
-# Add the repo root to the path so "core" can be imported regardless of
-# where the server is started from.
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
+# Add claude-skill/scripts/ to the path so the "core" package (which lives
+# there as the canonical single source) can be imported.
+SKILL_SCRIPTS = Path(__file__).resolve().parent.parent / "claude-skill" / "scripts"
+sys.path.insert(0, str(SKILL_SCRIPTS))
 
 from core.surface_analysis import analyze_gpx_surface as _analyze_gpx_surface  # noqa: E402
 from mcp.server.mcpserver import MCPServer  # noqa: E402

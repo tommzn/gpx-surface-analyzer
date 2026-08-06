@@ -17,10 +17,10 @@ import json
 import sys
 from pathlib import Path
 
-# Add the repo root to the path so "core" can be imported regardless of
-# where the script is invoked from.
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(REPO_ROOT))
+# Add the scripts/ directory to the path so the sibling "core" package
+# can be imported regardless of where the script is invoked from.
+SCRIPTS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPTS_DIR))
 
 try:
     from core.surface_analysis import analyze_gpx_surface
@@ -28,9 +28,7 @@ except ImportError as e:
     print(
         f"Missing package or core module not found: {e}\n"
         f"Please install dependencies with:\n"
-        f"  pip install -r requirements.txt --break-system-packages\n"
-        f"and make sure this script is inside the cloned gpx-surface-analyzer "
-        f"repo (core/ must be two levels above scripts/).",
+        f"  pip install -r requirements.txt --break-system-packages",
         file=sys.stderr,
     )
     sys.exit(1)
