@@ -1,5 +1,12 @@
 # gpx-surface-analyzer
 
+> **This repository has been archived.**
+> The Claude skill and MCP server have moved to [tommzn/ai-toolkit](https://github.com/tommzn/ai-toolkit):
+> - Skill → [`skills/gpx-surface-analyzer/`](https://github.com/tommzn/ai-toolkit/tree/main/skills/gpx-surface-analyzer)
+> - MCP server → [`mcp/gpx-surface-analyzer/`](https://github.com/tommzn/ai-toolkit/tree/main/mcp/gpx-surface-analyzer)
+
+
+
 Analyses GPX cycling routes and computes the percentage breakdown of road
 surface types (asphalt, gravel, unpaved, cobblestone) using OpenStreetMap
 data via the public Overpass API.
